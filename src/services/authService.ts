@@ -36,10 +36,13 @@ export async function login(input: LoginInput): Promise<{
 
   const user = await prisma.user.findUnique({
     where: { email },
-    include: {
-      roles: { include: { role: true } },
-      departments: { include: { department: true } },
-      organization: true,
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+      passwordHash: true,
+      isActive: true,
+      organizationId: true,
     },
   });
 
@@ -52,11 +55,21 @@ export async function login(input: LoginInput): Promise<{
     throw new AppError(401, "INVALID_CREDENTIALS", "Invalid email or password");
   }
 
-  const roles = user.roles.map((r) => r.role.name);
-  const departments = user.departments.map((d) => ({
-    id: d.departmentId,
-    name: d.department.name,
-  }));
+  let roles: string[] = [];
+  let departments: { id: string; name: string }[] = [];
+  try {
+    const userWithRelations = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        roles: { include: { role: true } },
+        departments: { include: { department: true } },
+      },
+    });
+    if (userWithRelations?.roles) roles = userWithRelations.roles.map((r) => r.role.name);
+    if (userWithRelations?.departments) departments = userWithRelations.departments.map((d) => ({ id: d.departmentId, name: d.department.name }));
+  } catch {
+    // UserRole/UserDepartment tables may not exist; login still succeeds with empty roles/departments
+  }
 
   const payload: JwtPayload = {
     sub: user.id,

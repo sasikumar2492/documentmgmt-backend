@@ -31,7 +31,21 @@ This will:
 
 - **"Can't reach database"** – Check `DATABASE_URL`, firewall, and that PostgreSQL is running. For cloud DBs, add `?sslmode=require` if needed.
 - **"Database does not exist"** – Create the database first (e.g. `createdb pharma_dms` or via your provider’s UI).
+- **"The column `User.passwordHash` does not exist"** (P2022) – The app expects the Phase 1 schema but the database has different or older tables. Fix: see **"Fix: column does not exist"** below.
+- **"Database schema is not empty"** (P3005) when running `migrate deploy` – The DB already has tables from another migration or manual setup. Fix: use **reset** (dev only) or **baseline** (see Prisma docs).
 - **"Schema drift" / "Migration failed"** – Do not edit migration SQL by hand unless you know what you’re doing. Prefer fixing `schema.prisma` and creating a new migration.
+
+### Fix: column does not exist (P2022)
+
+This means the database schema does not match the Prisma schema (e.g. migration not applied, or DB was created differently).
+
+- **Development (OK to wipe data):** From `documentmgmt-backend` run:
+  ```bash
+  npx prisma migrate reset
+  ```
+  Confirm when prompted. This drops all tables, reapplies migrations, and runs the seed. Then restart the backend and try login again.
+
+- **Production / cannot wipe:** Do not use `migrate reset`. Baseline or add the missing columns manually; see [Prisma baseline](https://pris.ly/d/migrate-baseline).
 
 ## 4. Later: add more migrations
 

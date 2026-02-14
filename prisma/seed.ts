@@ -27,9 +27,10 @@ async function main() {
     { name: "Operations", code: "OPS" },
   ];
 
-  const departments = await Promise.all(
-    deptNames.map((d) =>
-      prisma.department.upsert({
+  const departments: Awaited<ReturnType<typeof prisma.department.upsert>>[] = [];
+  for (const d of deptNames) {
+    departments.push(
+      await prisma.department.upsert({
         where: { code: d.code },
         update: {},
         create: {
@@ -39,8 +40,8 @@ async function main() {
           organizationId: org.id,
         },
       })
-    )
-  );
+    );
+  }
 
   // 3. Roles (match frontend: admin, requestor, manager_reviewer, approver + extras)
   const roleNames = [
@@ -54,19 +55,20 @@ async function main() {
     "manager",
   ];
 
-  const roles = await Promise.all(
-    roleNames.map((name) =>
-      prisma.role.upsert({
+  const roles: Awaited<ReturnType<typeof prisma.role.upsert>>[] = [];
+  for (const name of roleNames) {
+    roles.push(
+      await prisma.role.upsert({
         where: { name },
         update: {},
         create: { name, isSystem: true },
       })
-    )
-  );
+    );
+  }
 
   const roleMap = Object.fromEntries(roles.map((r) => [r.name, r]));
 
-  // 4. Permissions (sample keys for RBAC)
+  // 4. Permissions (sample keys for RBAC) – sequential to avoid connection exhaustion
   const permissionKeys = [
     "user.manage",
     "role.manage",
@@ -81,15 +83,16 @@ async function main() {
     "settings.manage",
   ];
 
-  const permissions = await Promise.all(
-    permissionKeys.map((key) =>
-      prisma.permission.upsert({
+  const permissions: Awaited<ReturnType<typeof prisma.permission.upsert>>[] = [];
+  for (const key of permissionKeys) {
+    permissions.push(
+      await prisma.permission.upsert({
         where: { key },
         update: {},
         create: { key },
       })
-    )
-  );
+    );
+  }
 
   // Grant admin all permissions; others get subset
   const adminRole = roleMap["admin"]!;
@@ -135,17 +138,25 @@ async function main() {
   ];
 
   for (const u of demoUsers) {
-    const user = await prisma.user.upsert({
-      where: { email: u.email },
-      update: { passwordHash, fullName: u.fullName, isActive: true },
-      create: {
-        email: u.email,
-        passwordHash,
-        fullName: u.fullName,
-        isActive: true,
-        organizationId: org.id,
-      },
-    });
+    const username = u.email.split("@")[0];
+    const existing = await prisma.user.findFirst({ where: { email: u.email } });
+    const user = existing
+      ? await prisma.user.update({
+          where: { id: existing.id },
+          data: { passwordHash, fullName: u.fullName, isActive: true, username },
+        })
+      : await prisma.user.create({
+          data: {
+            email: u.email,
+            username,
+            passwordHash,
+            fullName: u.fullName,
+            isActive: true,
+            organizationId: org.id,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
 
     const role = roleMap[u.roleName];
     const dept = departments.find((d) => d.code === u.departmentCode);
