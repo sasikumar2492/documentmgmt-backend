@@ -109,21 +109,45 @@ export async function refresh(refreshToken: string): Promise<AuthTokens> {
   const { verifyRefreshToken } = await import("../utils/jwt");
   const decoded = verifyRefreshToken(refreshToken);
 
-  const user = await prisma.user.findUnique({
-    where: { id: decoded.sub },
-    include: {
-      roles: { include: { role: true } },
-      departments: { include: { department: true } },
-      organization: true,
-    },
-  });
+  let user: {
+    id: string;
+    email: string;
+    isActive: boolean;
+    organizationId: string | null;
+    roles: { role: { name: string } }[];
+    departments?: { departmentId: string }[];
+  } | null = null;
+
+  try {
+    user = await prisma.user.findUnique({
+      where: { id: decoded.sub },
+      include: {
+        roles: { include: { role: true } },
+        departments: { include: { department: true } },
+        organization: true,
+      },
+    });
+  } catch (e: unknown) {
+    // P2021 = table does not exist (e.g. UserDepartment missing before migrations)
+    if (e && typeof e === "object" && "code" in e && (e as { code: string }).code === "P2021") {
+      user = await prisma.user.findUnique({
+        where: { id: decoded.sub },
+        include: {
+          roles: { include: { role: true } },
+          organization: true,
+        },
+      });
+    } else {
+      throw e;
+    }
+  }
 
   if (!user || !user.isActive) {
     throw new AppError(401, "INVALID_REFRESH_TOKEN", "User not found or inactive");
   }
 
   const roles = user.roles.map((r) => r.role.name);
-  const departmentIds = user.departments.map((d) => d.departmentId);
+  const departmentIds = user.departments ? user.departments.map((d) => d.departmentId) : [];
 
   const newAccessToken = signAccessToken({
     sub: user.id,

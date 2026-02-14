@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "seed": "npx ts-node prisma/seed.ts",
+    "db:migrate": "prisma migrate deploy",
     "db:reset": "npx prisma migrate reset",
     "db:fix-password-column": "npx ts-node scripts/fix-user-password-column.ts",
     "db:insert-demo-users": "npx ts-node scripts/insert-demo-users.ts"
