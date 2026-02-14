@@ -169,6 +169,15 @@ export async function refresh(refreshToken: string): Promise<AuthTokens> {
   };
 }
 
+function isPrismaTableMissingError(e: unknown): boolean {
+  return (
+    e != null &&
+    typeof e === "object" &&
+    "code" in e &&
+    (e as { code: string }).code === "P2021"
+  );
+}
+
 export async function requestPasswordReset(email: string): Promise<void> {
   const user = await prisma.user.findUnique({ where: { email } });
 
@@ -181,13 +190,24 @@ export async function requestPasswordReset(email: string): Promise<void> {
   const tokenHash = await bcrypt.hash(rawToken, 10);
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-  await prisma.passwordResetToken.create({
-    data: {
-      userId: user.id,
-      tokenHash,
-      expiresAt,
-    },
-  });
+  try {
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      },
+    });
+  } catch (e: unknown) {
+    if (isPrismaTableMissingError(e)) {
+      throw new AppError(
+        503,
+        "SERVICE_UNAVAILABLE",
+        "Password reset is temporarily unavailable. Run in documentmgmt-backend: npx prisma db push"
+      );
+    }
+    throw e;
+  }
 
   // In Phase 1, we only log/reset; actual email integration will be refined later.
   // eslint-disable-next-line no-console
@@ -197,50 +217,61 @@ export async function requestPasswordReset(email: string): Promise<void> {
 }
 
 export async function resetPassword(token: string, newPassword: string): Promise<void> {
-  const tokens = await prisma.passwordResetToken.findMany({
-    where: {
-      usedAt: null,
-      expiresAt: { gt: new Date() },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  try {
+    const tokens = await prisma.passwordResetToken.findMany({
+      where: {
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
 
-  let match:
-    | (typeof tokens)[number] & {
-        user: { id: string };
-      }
-    | null = null;
+    let match:
+      | (typeof tokens)[number] & {
+          user: { id: string };
+        }
+      | null = null;
 
-  for (const t of tokens) {
-    const ok = await bcrypt.compare(token, t.tokenHash);
-    if (ok) {
-      const withUser = await prisma.passwordResetToken.findUnique({
-        where: { id: t.id },
-        include: { user: true },
-      });
-      if (withUser) {
-        match = withUser;
-        break;
+    for (const t of tokens) {
+      const ok = await bcrypt.compare(token, t.tokenHash);
+      if (ok) {
+        const withUser = await prisma.passwordResetToken.findUnique({
+          where: { id: t.id },
+          include: { user: true },
+        });
+        if (withUser) {
+          match = withUser;
+          break;
+        }
       }
     }
+
+    if (!match) {
+      throw new AppError(400, "INVALID_RESET_TOKEN", "Reset token is invalid or expired");
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: match.userId },
+        data: { passwordHash },
+      }),
+      prisma.passwordResetToken.update({
+        where: { id: match.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+  } catch (e: unknown) {
+    if (isPrismaTableMissingError(e)) {
+      throw new AppError(
+        503,
+        "SERVICE_UNAVAILABLE",
+        "Password reset is temporarily unavailable. Run in documentmgmt-backend: npx prisma db push"
+      );
+    }
+    throw e;
   }
-
-  if (!match) {
-    throw new AppError(400, "INVALID_RESET_TOKEN", "Reset token is invalid or expired");
-  }
-
-  const passwordHash = await bcrypt.hash(newPassword, 10);
-
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: match.userId },
-      data: { passwordHash },
-    }),
-    prisma.passwordResetToken.update({
-      where: { id: match.id },
-      data: { usedAt: new Date() },
-    }),
-  ]);
 }
 
