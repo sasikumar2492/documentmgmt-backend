@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Core identity and access models for Phase 1
+
+model Organization {
+  id          String       @id @default(cuid())
+  name        String
+  code        String       @unique
+  isActive    Boolean      @default(true)
+  departments Department[]
+  users       User[]
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Department {
+  id             String           @id @default(cuid())
+  name           String
+  code           String           @unique
+  isActive       Boolean          @default(true)
+
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  organizationId String
+
+  users          UserDepartment[]
+
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  isSystem    Boolean          @default(false)
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  /// Machine‑readable key, e.g. "request.view"
+  key         String           @unique
+  description String?
+
+  roles       RolePermission[]
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model User {
+  id             String           @id @default(cuid())
+  email          String           @unique
+  passwordHash   String
+  fullName       String
+  isActive       Boolean          @default(true)
+
+  organization   Organization?    @relation(fields: [organizationId], references: [id])
+  organizationId String?
+
+  roles          UserRole[]
+  departments    UserDepartment[]
+  refreshTokens  RefreshToken[]
+  resetTokens    PasswordResetToken[]
+
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model UserRole {
+  userId String
+  roleId String
+
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role        Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission  Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserDepartment {
+  userId       String
+  departmentId String
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@id([userId, departmentId])
+}
+
+/// Stateless JWT‑based auth is used for access tokens.
+/// Refresh tokens are stored and can be rotated in later phases.
+model RefreshToken {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  /// Hashed random token value
+  tokenHash String
+  context   String?  /// e.g. "DMS" vs "TicketFlow"
+
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Password reset flow for /auth/forgot-password and /auth/reset-password
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  /// Hashed random token value
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+

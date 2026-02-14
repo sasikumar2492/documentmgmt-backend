@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets (never commit)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Logs and debug
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE (uncomment if you don't want to share)
+# .idea/
+# .vscode/
+
+# Test / coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Misc
+.turbo
+.cache/
+*.local
