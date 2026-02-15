@@ -169,6 +169,16 @@ export async function refresh(refreshToken: string): Promise<AuthTokens> {
   };
 }
 
+/**
+ * Logout: client should discard tokens. Optionally pass refreshToken to revoke server-side
+ * when refresh token storage/rotation is implemented.
+ */
+export async function logout(_refreshToken?: string): Promise<void> {
+  // Stateless JWT: nothing to invalidate on server. Client must clear access + refresh tokens.
+  // If refreshToken is provided, future implementation can revoke it in RefreshToken table.
+  await Promise.resolve();
+}
+
 function isPrismaTableMissingError(e: unknown): boolean {
   return (
     e != null &&

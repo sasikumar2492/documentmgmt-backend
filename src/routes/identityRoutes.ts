@@ -7,6 +7,7 @@ const router = Router();
 router.get("/me", authenticate, identityController.getMe);
 router.get("/roles", authenticate, identityController.getRoles);
 router.get("/departments", authenticate, identityController.getDepartments);
+router.get("/navigation", authenticate, identityController.getNavigation);
 
 export default router;
 

@@ -42,3 +42,21 @@ export async function getDepartments(
   }
 }
 
+export async function getNavigation(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const userPayload = req.user;
+    if (!userPayload) {
+      res.status(401).json({ error: { code: "UNAUTHENTICATED", message: "Unauthenticated" } });
+      return;
+    }
+    const navigation = await identityService.getNavigation(userPayload);
+    res.status(200).json(navigation);
+  } catch (error) {
+    next(error);
+  }
+}
+

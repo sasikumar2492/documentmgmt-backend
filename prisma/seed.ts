@@ -94,7 +94,9 @@ async function main() {
     );
   }
 
-  // Grant admin all permissions; others get subset
+  const perm = (key: string) => permissions.find((p) => p.key === key)!;
+
+  // Grant admin all permissions (1.1 / 1.2: full access for navigation)
   const adminRole = roleMap["admin"]!;
   for (const p of permissions) {
     await prisma.rolePermission.upsert({
@@ -106,8 +108,31 @@ async function main() {
     });
   }
 
-  const qaDept = departments.find((d) => d.code === "QA")!;
-  const docDept = departments.find((d) => d.code === "DOC")!;
+  // 1.2: Grant permissions to other roles so /identity/navigation returns permission keys
+  const rolePerms: Array<{ role: string; keys: string[] }> = [
+    { role: "requestor", keys: ["request.view", "request.create", "template.manage"] },
+    { role: "preparator", keys: ["request.view", "request.create", "template.manage"] },
+    { role: "reviewer", keys: ["request.view", "request.approve", "request.reject"] },
+    { role: "manager_reviewer", keys: ["request.view", "request.approve", "request.reject"] },
+    { role: "approver", keys: ["request.view", "request.approve", "request.reject", "template.approve"] },
+    { role: "manager_approver", keys: ["request.view", "request.approve", "request.reject", "template.approve"] },
+    { role: "manager", keys: ["request.view", "audit.view", "settings.manage", "department.manage"] },
+  ];
+  for (const { role: roleName, keys } of rolePerms) {
+    const role = roleMap[roleName];
+    if (!role) continue;
+    for (const key of keys) {
+      const p = perm(key);
+      if (!p) continue;
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionId: { roleId: role.id, permissionId: p.id },
+        },
+        update: {},
+        create: { roleId: role.id, permissionId: p.id },
+      });
+    }
+  }
 
   // 5. Demo users (match SignInPage dropdown)
   const demoUsers = [

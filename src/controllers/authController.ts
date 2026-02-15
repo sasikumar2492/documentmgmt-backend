@@ -60,3 +60,17 @@ export async function resetPassword(
   }
 }
 
+export async function logout(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { refreshToken } = (req.body as { refreshToken?: string }) ?? {};
+    await authService.logout(refreshToken);
+    res.status(200).json({ message: "Logged out successfully. Client should discard tokens." });
+  } catch (error) {
+    next(error);
+  }
+}
+
