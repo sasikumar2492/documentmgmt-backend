@@ -13,7 +13,8 @@
     "db:reset": "npx prisma migrate reset",
     "db:fix-password-column": "npx ts-node scripts/fix-user-password-column.ts",
     "db:insert-demo-users": "npx ts-node scripts/insert-demo-users.ts",
-    "get-reset-token": "npx ts-node scripts/get-reset-token.ts"
+    "get-reset-token": "npx ts-node scripts/get-reset-token.ts",
+    "verify-seed": "npx ts-node scripts/verify-phase1-seed.ts"
   },
   "prisma": {
     "seed": "npx ts-node prisma/seed.ts"
