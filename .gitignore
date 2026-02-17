@@ -37,4 +37,3 @@ coverage/
 .turbo
 .cache/
 *.local
-migrate-result.txt

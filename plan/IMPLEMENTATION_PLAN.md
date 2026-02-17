@@ -69,7 +69,7 @@ This document describes the end‑to‑end implementation plan, phase‑by‑pha
   - For each module, define the API contract:
     - Auth: `/auth/login`, `/auth/refresh`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/register` (if applicable).
     - Users/Admin: `/users`, `/roles`, `/permissions`, `/departments`, `/enterprise-settings`, `/sops`.
-    - Templates: `/templates`, `/templates/:id`, `/templates/:id/approve`, `/templates/:id/versions`.
+    - Templates: `/templates/upload` (multipart/form-data), `/templates`, `/templates/:id`, `/templates/:id/download` (presigned URL), `/templates/:id/approve`, `/templates/:id/versions`.
     - Requests: `/requests`, `/requests/:id`, `/requests/:id/submit`, `/requests/:id/approve`, `/requests/:id/reject`, `/requests/:id/request-changes`, `/requests/:id/publish`.
     - Workflows: `/workflows`, `/workflows/:id`, `/workflow-rules`, `/requests/:id/workflow`.
     - Training: `/training-records`, `/documents/published`, `/documents/published/:id/effectiveness-checks`.
@@ -79,6 +79,8 @@ This document describes the end‑to‑end implementation plan, phase‑by‑pha
   - Define:
     - Common pagination params (e.g., `page`, `pageSize`, `sortBy`, `sortDir`).
     - Standard error response shape (code, message, details).
+    - File upload handling: multipart/form-data for template uploads, max file size limits (e.g., 50MB).
+    - Presigned URL generation: expiration time (e.g., 1 hour), security considerations.
 
 - **Auth & authorization design**
   - JWT token structure:
@@ -158,6 +160,27 @@ This document describes the end‑to‑end implementation plan, phase‑by‑pha
     - Uses HTML templates (add folder/strategy without implementing content yet).
     - Records each send attempt into `email_logs`.
   - Expose a service‑level API: `sendNotificationEmail(eventKey, context)` to be used only from domain services.
+
+- **AWS S3 service setup**
+  - Install AWS SDK: `npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner`.
+  - Configure S3 client:
+    - Environment variables: `AWS_REGION`, `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
+    - For production: use IAM roles instead of access keys when running on AWS infrastructure.
+  - Create `S3Service` abstraction (`src/services/s3Service.ts`):
+    - `uploadFile(bucket, key, fileBuffer, contentType, metadata)` – upload file to S3.
+    - `generatePresignedUrl(bucket, key, expiresIn)` – generate presigned URL for secure download.
+    - `deleteFile(bucket, key)` – delete S3 object.
+    - `getFileMetadata(bucket, key)` – get file metadata (size, last modified).
+    - Error handling for S3 operations (network errors, access denied, bucket not found).
+  - S3 bucket structure:
+    - `{bucket}/templates/{templateId}/{version}/{original-filename}`.
+    - Example: `pharma-dms-templates/550e8400-e29b-41d4-a716-446655440000/v1/Part_Approval_Form.xlsx`.
+  - Create S3 bucket (manual step or infrastructure-as-code):
+    - Bucket name: `pharma-dms-templates` (or from env var).
+    - Region: match `AWS_REGION`.
+    - Versioning: enable for audit trail (optional).
+    - Lifecycle policies: archive old versions after X days (optional).
+    - CORS configuration: allow frontend domain to request presigned URLs.
 
 ### Frontend
 
@@ -248,17 +271,63 @@ All modules in this phase are implemented backend‑first, then wired to the fro
 
 #### Backend
 
-- Implement template APIs:
-  - `POST /templates/upload` – metadata + file handling stub (or integration with object storage).
+- **AWS S3 Setup & Configuration**:
+  - Install AWS SDK: `npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner`.
+  - Configure S3 client with credentials:
+    - Use IAM role (recommended for production) or access keys from environment variables.
+    - Environment variables: `AWS_REGION`, `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
+  - Create S3 service utility (`src/services/s3Service.ts`):
+    - `uploadFile(bucket, key, fileBuffer, contentType, metadata)` – upload file to S3.
+    - `generatePresignedUrl(bucket, key, expiresIn)` – generate presigned URL for download/preview.
+    - `deleteFile(bucket, key)` – delete S3 object (for cleanup).
+    - `getFileMetadata(bucket, key)` – get file metadata (size, last modified).
+  - S3 bucket structure:
+    - `{bucket}/templates/{templateId}/{version}/{original-filename}`.
+    - Example: `pharma-dms-templates/550e8400-e29b-41d4-a716-446655440000/v1/Part_Approval_Form.xlsx`.
+
+- **Implement template APIs**:
+  - `POST /templates/upload`:
+    - Accept `multipart/form-data` with file field.
+    - Validate file type (`.docx`, `.xlsx`, `.pdf`), size (max 50MB).
+    - Upload file to S3 using `s3Service.uploadFile()`.
+    - Store template record in database with:
+      - `s3Bucket`, `s3Key`, `originalFileName`, `fileSize`, `mimeType`, `departmentId`, `status: 'draft'`.
+    - Return template DTO with `id`, `fileName`, `fileSize`, `status` (not S3 URL; generate presigned URLs on-demand).
   - `GET /templates` – paginate, filter by department/status.
-  - `GET /templates/:id`
-  - `PATCH /templates/:id` – update metadata.
+    - Return list with metadata (no presigned URLs; frontend requests download URL separately if needed).
+  - `GET /templates/:id`:
+    - Return full template details including metadata.
+    - Optionally include presigned URL for preview (if `?includeDownloadUrl=true`).
+  - `GET /templates/:id/download` or `GET /templates/:id/preview`:
+    - Generate presigned URL (expires in 1 hour).
+    - Return `{ downloadUrl: "<presigned-url>", expiresAt: "<timestamp>" }`.
+  - `PATCH /templates/:id` – update metadata (not file; file updates require new version).
   - `POST /templates/:id/approve` – transition template to approved, create version if needed.
-  - `GET /templates/:id/versions`
+  - `GET /templates/:id/versions`:
+    - Return all versions with S3 keys (generate presigned URLs per version if requested).
+  - `DELETE /templates/:id` (soft delete):
+    - Mark template as deleted in database.
+    - Optionally delete S3 object (or keep for audit trail).
+
+- **Database schema updates**:
+  - `DocumentTemplate` table fields:
+    - `s3_bucket` (text) – S3 bucket name.
+    - `s3_key` (text) – S3 object key (path).
+    - `original_file_name` (text) – original uploaded filename.
+    - `file_size` (bigint) – file size in bytes.
+    - `mime_type` (text) – MIME type (e.g., `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).
+    - `version` (int, default 1) – template version number.
+    - `status` (enum: `draft`, `pending_approval`, `approved`, `deprecated`).
+    - `parsed_sections` (jsonb) – AI-extracted sections/fields.
+    - `form_schema` (jsonb) – final form schema after AI conversion preview.
+
 - `TemplateService` responsibilities:
+  - Handle file upload to S3 and database persistence.
+  - Generate presigned URLs for secure file access.
   - Persist AI‑parsed sections and converted form schema.
   - Link templates to workflows or departments based on rules.
   - Trigger notifications on important events (e.g., template approved).
+  - Handle template versioning (new version = new S3 object + new DB record with incremented version).
 
 #### Frontend
 
@@ -475,7 +544,10 @@ All modules in this phase are implemented backend‑first, then wired to the fro
 - **Environment configuration**
   - Ensure all secrets and environment‑dependent settings are pulled from environment variables:
     - DB connection, JWT secrets, SMTP credentials, external URLs, logging levels.
-  - Provide environment‑specific config for dev/stage/prod.
+    - AWS S3: `AWS_REGION`, `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (or use IAM roles in production).
+  - Provide environment‑specific config for dev/stage/prod:
+    - Separate S3 buckets per environment (e.g., `pharma-dms-templates-dev`, `pharma-dms-templates-prod`).
+    - Different AWS regions if needed for compliance.
 
 - **Email failure handling & retries**
   - Implement:

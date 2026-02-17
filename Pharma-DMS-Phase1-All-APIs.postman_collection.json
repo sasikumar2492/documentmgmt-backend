@@ -1,0 +1,1843 @@
+{
+	"info": {
+		"_postman_id": "pharma-dms-phase1-all-apis",
+		"name": "Pharma-DMS Phase 1 - All Completed APIs",
+		"description": "Complete Postman collection for all Phase 1 APIs:\n\n**1.1 Authentication & Identity** – Login, Refresh, Logout, Forgot/Reset Password, Me, Roles, Departments, Navigation\n**1.2 Dashboards & Navigation** – Request Counts, Recent Requests, Recent Templates, KPIs\n**1.3 Templates & AI-Assisted Document Preparation** – Upload, List, Get, Download URL, Update, Approve, Versions, Delete\n\n**Setup:**\n1. Set baseUrl (default: http://localhost:4000)\n2. Run Health Check, then Login to get accessToken\n3. Tokens and templateId are auto-saved\n\n**Demo Users:** sarah.admin@company.com, john.requestor@company.com, robert.manager@company.com, patricia.approver@company.com (password: demo123)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Health Check",
+			"item": [
+				{
+					"name": "Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has status ok\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.eql(\"ok\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/health",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"health"
+							]
+						},
+						"description": "Check if the backend server is running and healthy."
+					},
+					"response": []
+				}
+			],
+			"description": "Health check endpoint (no authentication required)"
+		},
+		{
+			"name": "2. Authentication (1.1)",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has user and tokens\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('user');",
+									"    pm.expect(jsonData).to.have.property('tokens');",
+									"    pm.expect(jsonData.tokens).to.have.property('accessToken');",
+									"    pm.expect(jsonData.tokens).to.have.property('refreshToken');",
+									"});",
+									"",
+									"// Save tokens to collection variables",
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"accessToken\", jsonData.tokens.accessToken);",
+									"    pm.collectionVariables.set(\"refreshToken\", jsonData.tokens.refreshToken);",
+									"    console.log(\"Tokens saved to collection variables\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"sarah.admin@company.com\",\n  \"password\": \"demo123\",\n  \"context\": \"DMS\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"login"
+							]
+						},
+						"description": "Authenticate user and receive access/refresh tokens.\n\n**Demo Users:**\n- sarah.admin@company.com / demo123 (Admin)\n- john.requestor@company.com / demo123 (Requestor)\n- robert.manager@company.com / demo123 (Manager)\n- patricia.approver@company.com / demo123 (Approver)\n\n**Optional:** `context` field can be \"DMS\" or \"TicketFlow\" to tag the session."
+					},
+					"response": []
+				},
+				{
+					"name": "Refresh Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has new tokens\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('tokens');",
+									"    pm.expect(jsonData.tokens).to.have.property('accessToken');",
+									"    pm.expect(jsonData.tokens).to.have.property('refreshToken');",
+									"});",
+									"",
+									"// Update tokens in collection variables",
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"accessToken\", jsonData.tokens.accessToken);",
+									"    pm.collectionVariables.set(\"refreshToken\", jsonData.tokens.refreshToken);",
+									"    console.log(\"Tokens updated\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/refresh",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"refresh"
+							]
+						},
+						"description": "Refresh access token using refresh token. Returns new access and refresh tokens."
+					},
+					"response": []
+				},
+				{
+					"name": "Logout",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has logout message\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"});",
+									"",
+									"// Clear tokens (optional - client should discard)",
+									"// pm.collectionVariables.unset(\"accessToken\");",
+									"// pm.collectionVariables.unset(\"refreshToken\");"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/logout",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"logout"
+							]
+						},
+						"description": "Logout user. Client should discard tokens after successful logout.\n\n**Note:** Body is optional. If provided, refreshToken can be used for server-side revocation (future enhancement)."
+					},
+					"response": []
+				},
+				{
+					"name": "Forgot Password",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has message\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"});",
+									"",
+									"console.log(\"Note: Reset token is logged in backend console, not sent by email in Phase 1\");"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"sarah.admin@company.com\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/forgot-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"forgot-password"
+							]
+						},
+						"description": "Request password reset. In Phase 1, the reset token is logged in the backend console (not sent by email).\n\n**To get reset token:** Check backend console output or run: `npm run get-reset-token <email>`"
+					},
+					"response": []
+				},
+				{
+					"name": "Reset Password",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has success message\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"token\": \"<reset_token_from_backend_console>\",\n  \"newPassword\": \"newSecurePassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/reset-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"reset-password"
+							]
+						},
+						"description": "Reset password using token from forgot-password request.\n\n**To get reset token:**\n1. Run forgot-password API and check backend console\n2. Or run: `npm run get-reset-token <email>`\n\n**After reset:** Use the new password to login."
+					},
+					"response": []
+				}
+			],
+			"description": "Authentication APIs for login, token refresh, logout, and password reset"
+		},
+		{
+			"name": "3. Identity (1.1)",
+			"item": [
+				{
+					"name": "Get Current User (Me)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Ensure accessToken is set",
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has user data\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('id');",
+									"    pm.expect(jsonData).to.have.property('email');",
+									"    pm.expect(jsonData).to.have.property('roles');",
+									"    pm.expect(jsonData).to.have.property('departments');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/identity/me",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"identity",
+								"me"
+							]
+						},
+						"description": "Get current authenticated user's profile including roles and departments."
+					},
+					"response": []
+				},
+				{
+					"name": "List Roles",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response is an array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/identity/roles",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"identity",
+								"roles"
+							]
+						},
+						"description": "List all available roles in the system."
+					},
+					"response": []
+				},
+				{
+					"name": "List Departments",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response is an array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/identity/departments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"identity",
+								"departments"
+							]
+						},
+						"description": "List all departments in the system."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Navigation",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has navigation data\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('allowedRouteIds');",
+									"    pm.expect(jsonData).to.have.property('permissions');",
+									"    pm.expect(jsonData).to.have.property('roles');",
+									"    pm.expect(jsonData).to.have.property('isAdmin');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/identity/navigation",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"identity",
+								"navigation"
+							]
+						},
+						"description": "Get navigation data including allowed route IDs, permissions, roles, and admin flag. Used by sidebars to determine which modules/routes are available for the current user."
+					},
+					"response": []
+				}
+			],
+			"description": "Identity APIs for user profile, roles, departments, and navigation"
+		},
+		{
+			"name": "4. Dashboard (1.2)",
+			"item": [
+				{
+					"name": "Get Request Counts",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has request counts\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('total');",
+									"    pm.expect(jsonData).to.have.property('byStatus');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/dashboard/request-counts?range=30d&groupBy=status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"dashboard",
+								"request-counts"
+							],
+							"query": [
+								{
+									"key": "range",
+									"value": "30d",
+									"description": "Time range: 7d, 30d, or 90d (default: 30d)"
+								},
+								{
+									"key": "groupBy",
+									"value": "status",
+									"description": "Group by: status, department, or role (default: status)"
+								}
+							]
+						},
+						"description": "Get request counts grouped by status, department, or role. Supports time range filtering.\n\n**Query Parameters:**\n- `range`: `7d`, `30d`, or `90d` (default: `30d`)\n- `groupBy`: `status`, `department`, or `role` (default: `status`)\n\n**Note:** Currently returns stub data in Phase 1 (no Request entities yet)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Recent Requests",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has items array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('items');",
+									"    pm.expect(jsonData.items).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/dashboard/recent-requests?limit=10&range=30d",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"dashboard",
+								"recent-requests"
+							],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Number of items to return (default: 10, max: 50)"
+								},
+								{
+									"key": "range",
+									"value": "30d",
+									"description": "Time range: 7d, 30d, or 90d (default: 30d)"
+								}
+							]
+						},
+						"description": "Get recently created/updated requests for the current user.\n\n**Query Parameters:**\n- `limit`: Number of items (default: 10, max: 50)\n- `range`: `7d`, `30d`, or `90d` (default: `30d`)\n\n**Note:** Currently returns stub data in Phase 1 (no Request entities yet)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Recent Templates",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has items array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('items');",
+									"    pm.expect(jsonData.items).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/dashboard/recent-templates?limit=10&range=30d",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"dashboard",
+								"recent-templates"
+							],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Number of items to return (default: 10, max: 50)"
+								},
+								{
+									"key": "range",
+									"value": "30d",
+									"description": "Time range: 7d, 30d, or 90d"
+								}
+							]
+						},
+						"description": "Get recently created/updated templates visible to the current user.\n\n**Query Parameters:**\n- `limit`: Number of items (default: 10, max: 50)\n- `range`: `7d`, `30d`, or `90d`\n\n**Note:** Currently returns stub data in Phase 1 (no Template entities yet)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get KPIs",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has KPI data\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('totalRequests');",
+									"    pm.expect(jsonData).to.have.property('totalApproved');",
+									"    pm.expect(jsonData).to.have.property('pendingApproval');",
+									"    pm.expect(jsonData).to.have.property('totalUsers');",
+									"    pm.expect(jsonData).to.have.property('totalDepartments');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/dashboard/kpis?range=30d",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"dashboard",
+								"kpis"
+							],
+							"query": [
+								{
+									"key": "range",
+									"value": "30d",
+									"description": "Time range: 7d, 30d, or 90d (default: 30d)"
+								}
+							]
+						},
+						"description": "Get aggregated KPI counts for dashboard cards.\n\n**Returns:**\n- `totalRequests`, `totalApproved`, `pendingApproval`, `rejectedCount`\n- `totalTemplates`, `totalUsers`, `totalDepartments`\n- `approvalRatePercent`\n\n**Query Parameters:**\n- `range`: `7d`, `30d`, or `90d` (default: `30d`)\n\n**Note:** Currently returns stub data except `totalUsers` and `totalDepartments` (from DB) in Phase 1."
+					},
+					"response": []
+				}
+			],
+			"description": "Dashboard APIs for request counts, recent requests/templates, and KPIs"
+		},
+		{
+			"name": "1. Upload Template",
+			"item": [
+				{
+					"name": "Upload Template (Multipart)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login from Phase 1.1 collection first.\");",
+									"}",
+									"",
+									"// Note: Postman will handle multipart/form-data automatically",
+									"// Make sure to select 'file' type for the file field in Body tab"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test(\"Response has template data\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('id');",
+									"    pm.expect(jsonData).to.have.property('name');",
+									"    pm.expect(jsonData).to.have.property('originalFileName');",
+									"    pm.expect(jsonData).to.have.property('fileSize');",
+									"    pm.expect(jsonData).to.have.property('status');",
+									"    pm.expect(jsonData.status).to.eql('draft');",
+									"});",
+									"",
+									"// Save template ID for subsequent requests",
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"templateId\", jsonData.id);",
+									"    console.log(\"Template ID saved: \" + jsonData.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": [],
+									"description": "Upload a Word (.docx), Excel (.xlsx), or PDF (.pdf) file. Max size: 50MB"
+								},
+								{
+									"key": "name",
+									"value": "Test Template",
+									"type": "text",
+									"description": "Optional: Display name for the template"
+								},
+								{
+									"key": "description",
+									"value": "Test template uploaded via Postman",
+									"type": "text",
+									"description": "Optional: Template description"
+								},
+								{
+									"key": "departmentId",
+									"value": "",
+									"type": "text",
+									"description": "Optional: Department ID"
+								},
+								{
+									"key": "organizationId",
+									"value": "",
+									"type": "text",
+									"description": "Optional: Organization ID"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/templates/upload",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates",
+								"upload"
+							]
+						},
+						"description": "Upload a template file to AWS S3 and create a template record.\n\n**Request:**\n- Method: POST\n- Content-Type: multipart/form-data\n- Field name: `file` (required)\n- Optional fields: `name`, `description`, `departmentId`, `organizationId`\n\n**Response:**\n- Returns template metadata with `id`, `name`, `fileSize`, `status: 'draft'`\n- File is stored in S3 at: `Pharma+DMS/templates/{templateId}/v1/{filename}`"
+					},
+					"response": []
+				}
+			],
+			"description": "Upload template files to AWS S3"
+		},
+		{
+			"name": "2. List Templates",
+			"item": [
+				{
+					"name": "Get All Templates",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has items and pagination\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('items');",
+									"    pm.expect(jsonData).to.have.property('pagination');",
+									"    pm.expect(jsonData.items).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/templates?page=1&pageSize=10",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number (default: 1)"
+								},
+								{
+									"key": "pageSize",
+									"value": "10",
+									"description": "Items per page (default: 10, max: 100)"
+								},
+								{
+									"key": "departmentId",
+									"value": "",
+									"description": "Optional: Filter by department ID",
+									"disabled": true
+								},
+								{
+									"key": "status",
+									"value": "",
+									"description": "Optional: Filter by status (draft, pending_approval, approved, deprecated)",
+									"disabled": true
+								},
+								{
+									"key": "organizationId",
+									"value": "",
+									"description": "Optional: Filter by organization ID",
+									"disabled": true
+								},
+								{
+									"key": "includeDeleted",
+									"value": "false",
+									"description": "Include soft-deleted templates (default: false)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get paginated list of templates with optional filters.\n\n**Query Parameters:**\n- `page`: Page number (default: 1)\n- `pageSize`: Items per page (default: 10, max: 100)\n- `departmentId`: Filter by department\n- `status`: Filter by status\n- `organizationId`: Filter by organization\n- `includeDeleted`: Include soft-deleted templates"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Templates by Status",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/templates?status=draft",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "draft",
+									"description": "Filter by status: draft, pending_approval, approved, deprecated"
+								}
+							]
+						},
+						"description": "Get templates filtered by status"
+					},
+					"response": []
+				}
+			],
+			"description": "List and filter templates"
+		},
+		{
+			"name": "3. Get Template Details",
+			"item": [
+				{
+					"name": "Get Template by ID",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}",
+									"",
+									"// Use templateId from collection variable if available",
+									"var templateId = pm.collectionVariables.get(\"templateId\");",
+									"if (templateId) {",
+									"    pm.request.url.variables.get('id').value = templateId;",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has template details\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('id');",
+									"    pm.expect(jsonData).to.have.property('name');",
+									"    pm.expect(jsonData).to.have.property('status');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/templates/:id?includeDownloadUrl=false",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates",
+								":id"
+							],
+							"query": [
+								{
+									"key": "includeDownloadUrl",
+									"value": "false",
+									"description": "Include presigned download URL (default: false)"
+								}
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{templateId}}",
+									"description": "Template ID"
+								}
+							]
+						},
+						"description": "Get template details by ID.\n\n**Query Parameters:**\n- `includeDownloadUrl`: Set to `true` to include presigned download URL in response"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Template with Download URL",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}",
+									"",
+									"var templateId = pm.collectionVariables.get(\"templateId\");",
+									"if (templateId) {",
+									"    pm.request.url.variables.get('id').value = templateId;",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response includes download URL\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('downloadUrl');",
+									"    pm.expect(jsonData).to.have.property('downloadUrlExpiresAt');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/templates/:id?includeDownloadUrl=true",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates",
+								":id"
+							],
+							"query": [
+								{
+									"key": "includeDownloadUrl",
+									"value": "true",
+									"description": "Include presigned download URL"
+								}
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{templateId}}",
+									"description": "Template ID"
+								}
+							]
+						},
+						"description": "Get template details with presigned download URL included"
+					},
+					"response": []
+				}
+			],
+			"description": "Get template details"
+		},
+		{
+			"name": "4. Download & Preview",
+			"item": [
+				{
+					"name": "Get Presigned Download URL",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}",
+									"",
+									"var templateId = pm.collectionVariables.get(\"templateId\");",
+									"if (templateId) {",
+									"    pm.request.url.variables.get('id').value = templateId;",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has download URL\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('downloadUrl');",
+									"    pm.expect(jsonData).to.have.property('expiresAt');",
+									"    pm.expect(jsonData.downloadUrl).to.include('amazonaws.com');",
+									"});",
+									"",
+									"// Log the download URL",
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    console.log(\"Download URL: \" + jsonData.downloadUrl);",
+									"    console.log(\"Expires at: \" + jsonData.expiresAt);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/templates/:id/download?expiresIn=3600",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates",
+								":id",
+								"download"
+							],
+							"query": [
+								{
+									"key": "expiresIn",
+									"value": "3600",
+									"description": "URL expiration time in seconds (default: 3600 = 1 hour)"
+								}
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{templateId}}",
+									"description": "Template ID"
+								}
+							]
+						},
+						"description": "Generate a presigned URL for downloading/previewing the template file.\n\n**Query Parameters:**\n- `expiresIn`: Expiration time in seconds (default: 3600 = 1 hour)\n\n**Response:**\n- Returns `downloadUrl` (presigned S3 URL) and `expiresAt` timestamp\n- Use the URL directly in browser or download tool"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Presigned Preview URL",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}",
+									"",
+									"var templateId = pm.collectionVariables.get(\"templateId\");",
+									"if (templateId) {",
+									"    pm.request.url.variables.get('id').value = templateId;",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/templates/:id/preview",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates",
+								":id",
+								"preview"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{templateId}}",
+									"description": "Template ID"
+								}
+							]
+						},
+						"description": "Alias for download endpoint - generates presigned preview URL"
+					},
+					"response": []
+				}
+			],
+			"description": "Get presigned URLs for file download/preview from S3"
+		},
+		{
+			"name": "5. Update Template",
+			"item": [
+				{
+					"name": "Update Template Metadata",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}",
+									"",
+									"var templateId = pm.collectionVariables.get(\"templateId\");",
+									"if (templateId) {",
+									"    pm.request.url.variables.get('id').value = templateId;",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has updated template\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('id');",
+									"    pm.expect(jsonData).to.have.property('updatedAt');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Template Name\",\n  \"description\": \"Updated description\",\n  \"parsedSections\": {\n    \"sections\": [\n      {\n        \"name\": \"Section 1\",\n        \"fields\": []\n      }\n    ]\n  },\n  \"formSchema\": {\n    \"fields\": []\n  },\n  \"aiWorkflowProposal\": {\n    \"steps\": []\n  },\n  \"status\": \"pending_approval\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/templates/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{templateId}}",
+									"description": "Template ID"
+								}
+							]
+						},
+						"description": "Update template metadata (name, description, parsed sections, form schema, AI workflow proposal, status).\n\n**Note:** File updates require creating a new version. This endpoint only updates metadata.\n\n**Request Body (all fields optional):**\n- `name`: Template display name\n- `description`: Template description\n- `parsedSections`: AI-extracted sections (JSON)\n- `formSchema`: Form schema (JSON)\n- `aiWorkflowProposal`: AI workflow proposal (JSON)\n- `status`: Template status (draft, pending_approval, approved, deprecated)"
+					},
+					"response": []
+				}
+			],
+			"description": "Update template metadata"
+		},
+		{
+			"name": "6. Approve Template",
+			"item": [
+				{
+					"name": "Approve Template",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}",
+									"",
+									"var templateId = pm.collectionVariables.get(\"templateId\");",
+									"if (templateId) {",
+									"    pm.request.url.variables.get('id').value = templateId;",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Template is approved\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.eql('approved');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/templates/:id/approve",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates",
+								":id",
+								"approve"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{templateId}}",
+									"description": "Template ID"
+								}
+							]
+						},
+						"description": "Approve a template, transitioning status to 'approved'.\n\n**Note:** Only templates in 'draft' or 'pending_approval' status can be approved."
+					},
+					"response": []
+				}
+			],
+			"description": "Approve templates"
+		},
+		{
+			"name": "7. Template Versions",
+			"item": [
+				{
+					"name": "Get Template Versions",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}",
+									"",
+									"var templateId = pm.collectionVariables.get(\"templateId\");",
+									"if (templateId) {",
+									"    pm.request.url.variables.get('id').value = templateId;",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has versions array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('versions');",
+									"    pm.expect(jsonData.versions).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/templates/:id/versions?includeDownloadUrls=false",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates",
+								":id",
+								"versions"
+							],
+							"query": [
+								{
+									"key": "includeDownloadUrls",
+									"value": "false",
+									"description": "Include presigned download URLs for each version"
+								}
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{templateId}}",
+									"description": "Template ID"
+								}
+							]
+						},
+						"description": "Get all versions of a template.\n\n**Query Parameters:**\n- `includeDownloadUrls`: Set to `true` to include presigned download URLs for each version"
+					},
+					"response": []
+				}
+			],
+			"description": "Get template versions"
+		},
+		{
+			"name": "8. Delete Template",
+			"item": [
+				{
+					"name": "Delete Template (Soft Delete)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}",
+									"",
+									"var templateId = pm.collectionVariables.get(\"templateId\");",
+									"if (templateId) {",
+									"    pm.request.url.variables.get('id').value = templateId;",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has success message\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/templates/:id?deleteS3File=false",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates",
+								":id"
+							],
+							"query": [
+								{
+									"key": "deleteS3File",
+									"value": "false",
+									"description": "Also delete file from S3 (default: false, keeps file for audit)"
+								}
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{templateId}}",
+									"description": "Template ID"
+								}
+							]
+						},
+						"description": "Soft delete a template (marks as deleted in database).\n\n**Query Parameters:**\n- `deleteS3File`: Set to `true` to also delete the file from S3 (default: false, keeps file for audit trail)\n\n**Note:** This is a soft delete - the template record is marked as deleted but can be recovered if needed."
+					},
+					"response": []
+				}
+			],
+			"description": "Delete templates (soft delete)"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:4000",
+			"type": "string"
+		},
+		{
+			"key": "accessToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refreshToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "templateId",
+			"value": "",
+			"type": "string",
+			"description": "Auto-set after uploading a template"
+		}
+	]
+}

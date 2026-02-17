@@ -2,25 +2,7 @@
 
 Your repo: **documentmgmt-backend**  
 Remote: **origin** → `https://github.com/sasikumar2492/documentmgmt-backend.git`  
-Current branch: **dev/Vijay/backend** (or your branch name)
-
----
-
-## Files that should be pushed (included)
-
-- Source: `src/`, `prisma/`, `scripts/`
-- Config: `package.json`, `package-lock.json`, `tsconfig.json`, `.gitignore`, `.env.example`
-- Docs: `docs/`, `plan/`, `POSTMAN_PHASE1.md`, `PUSH_GUIDE.md`, `README.phase1.md`
-- Helpers: `run-migration.bat`, `sync-database.bat`
-
-## Files that must NOT be pushed (ignored via .gitignore)
-
-- **`.env`** – contains secrets (DATABASE_URL, JWT secrets). Never commit.
-- **`node_modules/`** – dependencies (reinstall with `npm install`)
-- **`dist/`** – build output
-- **`migrate-result.txt`**, **`*.log`** – temporary files
-
-After `git add .`, run `git status` and confirm `.env` and `node_modules` do **not** appear.
+Current branch: **dev/Vijay/backend**
 
 ---
 

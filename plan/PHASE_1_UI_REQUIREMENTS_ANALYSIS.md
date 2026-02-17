@@ -65,15 +65,32 @@ The existing frontend is a single-page React app with role-aware navigation and 
 
 - **Upload Templates / Document Management (`UploadTemplates`, `DocumentManagement`)**
   - Flows:
-    - User uploads Word/Excel/PDF.
-    - Frontend invokes parsers to extract sections & fields.
+    - User uploads doc and docx file.
+    - Frontend sends file to backend via multipart/form-data.
+    - Backend uploads file to **AWS S3 bucket** and stores S3 object key/reference in database.
+    - Frontend invokes parsers to extract sections & fields (can be backend service or frontend).
     - AI proposes workflows and dynamic forms.
   - **Backend needs**:
     - **Template resource**:
-      - Create template with metadata (file name, size, department).
+      - Create template with metadata (file name, size, department, MIME type).
+      - Store **AWS S3 object key** (e.g., `templates/{templateId}/{version}/{filename}`) in database.
+      - Store **S3 bucket name** and **region** in configuration/environment.
+      - Generate **presigned URLs** for secure file download/preview (time-limited access).
       - Persist parsed sections and AI-generated form schema.
       - Track status (`draft`, `pending_approval`, `approved`, `deprecated`).
-    - Optional file storage integration (if backend will store physical files/blobs).
+    - **AWS S3 Integration**:
+      - Configure AWS SDK (`@aws-sdk/client-s3`) with credentials (IAM role or access keys).
+      - S3 bucket structure: `{bucket-name}/templates/{templateId}/{version}/{original-filename}`.
+      - Support for versioning: each template version gets a separate S3 object path.
+      - File upload endpoint (`POST /templates/upload`):
+        - Accept multipart/form-data with file.
+        - Validate file type (Word/Excel/PDF), size limits (e.g., max 50MB).
+        - Upload to S3 with metadata (content-type, original filename).
+        - Return template record with S3 object key (not full URL; generate presigned URLs on-demand).
+      - File download/preview endpoint (`GET /templates/:id/download` or `GET /templates/:id/preview`):
+        - Generate presigned URL (expires in 1 hour or configurable).
+        - Return presigned URL to frontend for direct S3 access.
+      - File deletion: when template is deprecated/deleted, optionally delete S3 object (or keep for audit).
 
 - **Workflow Approval for AI Flow (`WorkflowApprovalStep`)**
   - Flow:
@@ -92,6 +109,9 @@ The existing frontend is a single-page React app with role-aware navigation and 
   - **Backend needs**:
     - Endpoint to **save final form schema** for a template.
     - Support for **versioning** of templates over time.
+    - When creating new template version:
+      - Copy or reference original S3 object (or upload new file if changed).
+      - Store new S3 object key with version number in database.
 
 #### 1.4. Request Creation & Approval Forms
 
@@ -362,12 +382,14 @@ This is a first-pass list of resources and endpoints inferred from the UI. Exact
 #### 3.3. Templates & AI Conversion
 
 - Templates:
-  - `POST /templates/upload`
-  - `GET /templates`
-  - `GET /templates/:id`
-  - `PATCH /templates/:id`
-  - `POST /templates/:id/approve`
-  - `GET /templates/:id/versions`
+  - `POST /templates/upload` – upload file (multipart/form-data), stores in AWS S3, returns template metadata.
+  - `GET /templates` – list templates with pagination/filters (returns metadata, not file URLs).
+  - `GET /templates/:id` – get template details (optionally include presigned download URL via query param).
+  - `GET /templates/:id/download` or `GET /templates/:id/preview` – generate presigned URL for file download/preview.
+  - `PATCH /templates/:id` – update template metadata (not file; file updates require new version).
+  - `POST /templates/:id/approve` – approve template, transition status.
+  - `GET /templates/:id/versions` – list all versions of a template (with S3 keys).
+  - `DELETE /templates/:id` – soft delete template (optionally delete S3 object).
 
 #### 3.4. Requests & Forms
 
