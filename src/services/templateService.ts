@@ -1,4 +1,6 @@
 import { randomUUID } from "crypto";
+import * as fs from "fs";
+import * as path from "path";
 import { prisma } from "../config/prisma";
 import { AppError } from "../errors/AppError";
 import {
@@ -8,6 +10,9 @@ import {
   buildTemplateS3Key,
 } from "./s3Service";
 import { config } from "../config/env";
+import { docToPdf, htmlToDocxWithFallback } from "./convertApiService";
+import { mergeHtmlDocxIntoOriginal } from "./docxMergeService";
+import { pdfToHtml } from "./geminiService";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const ALLOWED_MIME_TYPES = [
@@ -17,6 +22,13 @@ const ALLOWED_MIME_TYPES = [
   "application/msword", // .doc (legacy)
   "application/vnd.ms-excel", // .xls (legacy)
 ];
+
+const WORD_MIME_TYPES = [
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+];
+
+const UPLOADS_DIR = path.join(process.cwd(), "uploads", "templates");
 
 export interface CreateTemplateInput {
   file: Express.Multer.File;
@@ -62,21 +74,107 @@ function validateFile(file: Express.Multer.File): void {
 }
 
 /**
- * Create a new template with file upload to S3
+ * Create a new template.
+ * - For .doc/.docx: store locally → ConvertAPI to PDF → Gemini to HTML; no S3 until save-content.
+ * - For .xlsx/.pdf etc.: upload to S3 and store reference (existing behavior).
  */
 export async function createTemplate(input: CreateTemplateInput) {
   validateFile(input.file);
 
-  // Build S3 key
   const templateId = randomUUID();
   const version = 1;
+  const isWord =
+    WORD_MIME_TYPES.includes(input.file.mimetype) ||
+    /\.(doc|docx)$/i.test(input.file.originalname);
+
+  if (isWord) {
+    // Step 2: Store locally
+    const ext = input.file.originalname.toLowerCase().endsWith(".docx")
+      ? "docx"
+      : "doc";
+    const dir = path.join(UPLOADS_DIR, templateId);
+    fs.mkdirSync(dir, { recursive: true });
+    const localFilePath = path.join(dir, `original.${ext}`);
+    fs.writeFileSync(localFilePath, input.file.buffer);
+
+    // Create DB record (no S3 yet). Schema: s3Bucket/s3Key optional, localFilePath, htmlContent.
+    const template = await prisma.documentTemplate.create({
+      data: {
+        id: templateId,
+        s3Bucket: null,
+        s3Key: null,
+        localFilePath,
+        htmlContent: null,
+        originalFileName: input.file.originalname,
+        fileSize: BigInt(input.file.size),
+        mimeType: input.file.mimetype,
+        name: input.name || input.file.originalname,
+        description: input.description,
+        version,
+        status: "draft",
+        departmentId: input.departmentId,
+        organizationId: input.organizationId,
+        createdById: input.createdById,
+      } as any,
+      include: {
+        department: true,
+        organization: true,
+        createdBy: {
+          select: {
+            id: true,
+            email: true,
+            fullName: true,
+          },
+        },
+      },
+    });
+
+    // Step 3 & 4: ConvertAPI doc→PDF, then Gemini PDF→HTML
+    let htmlContent: string | null = null;
+    try {
+      const pdfBuffer = await docToPdf(input.file.buffer, ext);
+      htmlContent = await pdfToHtml(pdfBuffer);
+    } catch (err) {
+      console.error("Conversion pipeline failed:", err);
+      await prisma.documentTemplate.update({
+        where: { id: templateId },
+        data: { htmlContent: null },
+      });
+      throw err;
+    }
+
+    await prisma.documentTemplate.update({
+      where: { id: templateId },
+      data: { htmlContent } as { htmlContent: string },
+    });
+
+    const t = template as typeof template & { department?: { id: string; name: string; code: string } | null; organization?: { id: string; name: string; code: string } | null };
+    return {
+      id: template.id,
+      name: template.name,
+      originalFileName: template.originalFileName,
+      fileSize: Number(template.fileSize),
+      mimeType: template.mimeType,
+      version: template.version,
+      status: template.status,
+      department: t.department
+        ? { id: t.department.id, name: t.department.name, code: t.department.code }
+        : null,
+      organization: t.organization
+        ? { id: t.organization.id, name: t.organization.name, code: t.organization.code }
+        : null,
+      createdAt: template.createdAt,
+      updatedAt: template.updatedAt,
+      html: htmlContent,
+    };
+  }
+
+  // Non-Word: upload to S3 (existing behavior)
   const s3Key = buildTemplateS3Key(
     templateId,
     version,
     input.file.originalname
   );
-
-  // Upload file to S3
   await uploadFile(
     s3Key,
     input.file.buffer,
@@ -87,7 +185,6 @@ export async function createTemplate(input: CreateTemplateInput) {
     }
   );
 
-  // Create template record in database
   const template = await prisma.documentTemplate.create({
     data: {
       id: templateId,
@@ -230,12 +327,15 @@ export async function getTemplates(params: {
 }
 
 /**
- * Get a single template by ID
+ * Get a single template by ID.
+ * @param includeHtml When true, include htmlContent in response (for editable HTML view).
+ * @param includeDownloadUrl When true, include presigned URL if template has S3 file (after save-content).
  */
 export async function getTemplateById(
   id: string,
-  includeDownloadUrl: boolean = false
+  options: { includeDownloadUrl?: boolean; includeHtml?: boolean } = {}
 ) {
+  const { includeDownloadUrl = false, includeHtml = false } = options;
   const template = await prisma.documentTemplate.findUnique({
     where: { id, deletedAt: null },
     include: {
@@ -255,7 +355,7 @@ export async function getTemplateById(
     throw new AppError(404, "TEMPLATE_NOT_FOUND", "Template not found");
   }
 
-  const result: any = {
+  const result: Record<string, unknown> = {
     id: template.id,
     name: template.name,
     description: template.description,
@@ -286,7 +386,12 @@ export async function getTemplateById(
     updatedAt: template.updatedAt,
   };
 
-  if (includeDownloadUrl) {
+  const htmlContent = (template as Record<string, unknown>).htmlContent;
+  if (includeHtml && htmlContent != null) {
+    result.html = htmlContent as string;
+  }
+
+  if (includeDownloadUrl && template.s3Key) {
     const downloadUrl = await generatePresignedUrl(template.s3Key, 3600);
     result.downloadUrl = downloadUrl;
     result.downloadUrlExpiresAt = new Date(
@@ -298,7 +403,26 @@ export async function getTemplateById(
 }
 
 /**
- * Generate presigned URL for template download/preview
+ * Get template HTML only (for editable view). Returns 404 if no HTML.
+ */
+export async function getTemplateHtml(id: string): Promise<string> {
+  const template = await prisma.documentTemplate.findUnique({
+    where: { id, deletedAt: null },
+  });
+  const htmlContent = template && (template as Record<string, unknown>).htmlContent;
+  if (htmlContent == null || typeof htmlContent !== "string") {
+    throw new AppError(
+      404,
+      "TEMPLATE_HTML_NOT_FOUND",
+      "Template not found or HTML not yet generated (upload a .doc/.docx first)."
+    );
+  }
+  return htmlContent;
+}
+
+/**
+ * Generate presigned URL for template download/preview.
+ * Fails if template has no S3 file yet (user must save edited HTML first).
  */
 export async function getTemplateDownloadUrl(id: string, expiresIn: number = 3600) {
   const template = await prisma.documentTemplate.findUnique({
@@ -310,10 +434,116 @@ export async function getTemplateDownloadUrl(id: string, expiresIn: number = 360
     throw new AppError(404, "TEMPLATE_NOT_FOUND", "Template not found");
   }
 
+  if (!template.s3Key) {
+    throw new AppError(
+      400,
+      "DOCUMENT_NOT_SAVED",
+      "Document file is not available yet. Save the edited HTML content first (POST /templates/:id/save-content) to generate the .docx and upload to storage."
+    );
+  }
+
   const downloadUrl = await generatePresignedUrl(template.s3Key, expiresIn);
   return {
     downloadUrl,
     expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+  };
+}
+
+/**
+ * Save edited HTML: reconvert to .docx and upload to S3 (Step 7 & 8).
+ */
+export async function saveTemplateContent(
+  id: string,
+  html: string,
+  updatedById: string
+) {
+  const template = await prisma.documentTemplate.findUnique({
+    where: { id, deletedAt: null },
+    include: {
+      department: true,
+      organization: true,
+    },
+  });
+
+  if (!template) {
+    throw new AppError(404, "TEMPLATE_NOT_FOUND", "Template not found");
+  }
+
+  const version = template.version;
+  const baseName = template.originalFileName.replace(/\.[^.]+$/, "") || "document";
+  const docxFileName = `${baseName}.docx`;
+  const s3Key = buildTemplateS3Key(id, version, docxFileName);
+
+  let docxBuffer: Buffer;
+
+  const localPath = template.localFilePath as string | null;
+  const isDocx =
+    localPath != null &&
+    (localPath.toLowerCase().endsWith(".docx") ||
+      (template.mimeType &&
+        String(template.mimeType).includes(
+          "openxmlformats-officedocument.wordprocessingml"
+        )));
+
+  if (isDocx && localPath && fs.existsSync(localPath)) {
+    // Retrieve original document from local storage and merge updated HTML into it
+    const originalBuffer = fs.readFileSync(localPath);
+    const newDocxFromHtml = await htmlToDocxWithFallback(html);
+    docxBuffer = await mergeHtmlDocxIntoOriginal(originalBuffer, newDocxFromHtml);
+  } else {
+    // No original .docx on disk (e.g. .doc only, or missing file): convert HTML to DOCX only
+    docxBuffer = await htmlToDocxWithFallback(html);
+  }
+
+  await uploadFile(
+    s3Key,
+    docxBuffer,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    { updatedById }
+  );
+
+  const updated = await prisma.documentTemplate.update({
+    where: { id },
+    data: {
+      s3Bucket: config.aws.s3Bucket,
+      s3Key,
+      htmlContent: html,
+      updatedById,
+      updatedAt: new Date(),
+    } as any,
+    include: {
+      department: true,
+      organization: true,
+      createdBy: {
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+        },
+      },
+    },
+  });
+
+  const u = updated as typeof updated & { department?: { id: string; name: string; code: string } | null; organization?: { id: string; name: string; code: string } | null };
+  return {
+    status: "success" as const,
+    s3Key: updated.s3Key ?? undefined,
+    updatedAt: updated.updatedAt.toISOString(),
+    id: updated.id,
+    name: updated.name,
+    originalFileName: updated.originalFileName,
+    fileSize: Number(updated.fileSize),
+    mimeType: updated.mimeType,
+    version: updated.version,
+    templateStatus: updated.status,
+    department: u.department
+      ? { id: u.department.id, name: u.department.name, code: u.department.code }
+      : null,
+    organization: u.organization
+      ? { id: u.organization.id, name: u.organization.name, code: u.organization.code }
+      : null,
+    createdAt: updated.createdAt,
+    html: updated.htmlContent,
   };
 }
 
@@ -336,10 +566,10 @@ export async function updateTemplate(
   const updated = await prisma.documentTemplate.update({
     where: { id },
     data: {
-      ...input,
+      ...(input as Record<string, unknown>),
       updatedById,
       updatedAt: new Date(),
-    },
+    } as any,
     include: {
       department: true,
       organization: true,
@@ -457,9 +687,13 @@ export async function getTemplateVersions(id: string, includeDownloadUrls: boole
   if (includeDownloadUrls) {
     const versionsWithUrls = await Promise.all(
       versions.map(async (v) => {
+        const base = result.find((r) => r.id === v.id);
+        if (!v.s3Key) {
+          return { ...base, downloadUrl: null, downloadUrlExpiresAt: null };
+        }
         const downloadUrl = await generatePresignedUrl(v.s3Key, 3600);
         return {
-          ...result.find((r) => r.id === v.id),
+          ...base,
           downloadUrl,
           downloadUrlExpiresAt: new Date(
             Date.now() + 3600 * 1000
@@ -485,12 +719,11 @@ export async function deleteTemplate(id: string, deleteS3File: boolean = false) 
     throw new AppError(404, "TEMPLATE_NOT_FOUND", "Template not found");
   }
 
-  // Optionally delete S3 file
-  if (deleteS3File) {
+  // Optionally delete S3 file (only if template has one)
+  if (deleteS3File && template.s3Key) {
     try {
       await deleteFile(template.s3Key);
     } catch (error) {
-      // Log error but continue with soft delete
       console.error("Failed to delete S3 file:", error);
     }
   }

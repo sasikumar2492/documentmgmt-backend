@@ -63,39 +63,57 @@ The existing frontend is a single-page React app with role-aware navigation and 
 
 #### 1.3. Templates & AI-Assisted Document Preparation
 
+The following flow defines how uploaded Word documents are stored, converted to editable HTML via AI, and persisted back as .doc/.docx in S3.
+
+**Objective – End-to-end flow:**
+
+| Step | Owner | Description |
+|------|--------|-------------|
+| **Step 1** | Frontend | User uploads **.doc or .docx** files (multipart/form-data to backend). |
+| **Step 2** | Backend | Store the uploaded file reference and metadata in **local DB** (template record; file may be stored in DB as blob or in temp storage before conversion). |
+| **Step 3** | Backend | Convert the .doc/.docx to **PDF** using **ConvertAPI** tool. |
+| **Step 4** | Backend | Send PDF (or extracted content) to **Gemini** to convert to **HTML**. |
+| **Step 5** | Backend | Return the **HTML content** in the API response (e.g. `GET /templates/:id/html` or within template detail response). |
+| **Step 6** | Frontend | Allow user to **edit the HTML** in the UI (editable HTML view/editor). |
+| **Step 7** | Backend | When user saves: **reconvert** the edited HTML back to **.doc / .docx** (using ConvertAPI or equivalent). |
+| **Step 8** | Backend | **Update** the generated .doc/.docx file in the **AWS S3 bucket** (overwrite or new version) and update template record in DB. |
+
 - **Upload Templates / Document Management (`UploadTemplates`, `DocumentManagement`)**
-  - Flows:
-    - User uploads doc and docx file.
-    - Frontend sends file to backend via multipart/form-data.
-    - Backend uploads file to **AWS S3 bucket** and stores S3 object key/reference in database.
-    - Frontend invokes parsers to extract sections & fields (can be backend service or frontend).
-    - AI proposes workflows and dynamic forms.
+  - **Step 1 (Frontend):** User selects and uploads **.doc or .docx** only. Frontend sends file to backend via multipart/form-data.
+  - **Step 2 (Backend):** Create **template resource** in local DB with metadata (file name, size, department, MIME type). Store file temporarily or reference (e.g. blob in DB or temp path) for conversion pipeline.
+  - **Step 3 (Backend):** Use **ConvertAPI** to convert the uploaded .doc/.docx to **PDF**.
+  - **Step 4 (Backend):** Use **Gemini** (AI) to convert the PDF (or its content) to **HTML**.
+  - **Step 5 (Backend):** Expose an endpoint (e.g. `GET /templates/:id/html` or include in `GET /templates/:id`) that **returns the HTML** for the template. Frontend uses this for the editable view.
+  - **Step 6 (Frontend):** Provide an **editable HTML** view/editor so the user can modify the document content.
+  - **Step 7 (Backend):** Provide an endpoint (e.g. `POST /templates/:id/save-as-doc` or `PUT /templates/:id/content`) that accepts the **edited HTML**, reconverts it to **.doc/.docx** (using ConvertAPI or similar).
+  - **Step 8 (Backend):** Upload the generated .doc/.docx to **AWS S3** (same key or new version), update template record (e.g. `s3_key`, `version`, `updated_at`). Optionally keep HTML in DB for quick load.
+
   - **Backend needs**:
-    - **Template resource**:
-      - Create template with metadata (file name, size, department, MIME type).
-      - Store **AWS S3 object key** (e.g., `templates/{templateId}/{version}/{filename}`) in database.
-      - Store **S3 bucket name** and **region** in configuration/environment.
-      - Generate **presigned URLs** for secure file download/preview (time-limited access).
-      - Persist parsed sections and AI-generated form schema.
-      - Track status (`draft`, `pending_approval`, `approved`, `deprecated`).
-    - **AWS S3 Integration**:
-      - Configure AWS SDK (`@aws-sdk/client-s3`) with credentials (IAM role or access keys).
-      - S3 bucket structure: `{bucket-name}/templates/{templateId}/{version}/{original-filename}`.
-      - Support for versioning: each template version gets a separate S3 object path.
-      - File upload endpoint (`POST /templates/upload`):
-        - Accept multipart/form-data with file.
-        - Validate file type (Word/Excel/PDF), size limits (e.g., max 50MB).
-        - Upload to S3 with metadata (content-type, original filename).
-        - Return template record with S3 object key (not full URL; generate presigned URLs on-demand).
-      - File download/preview endpoint (`GET /templates/:id/download` or `GET /templates/:id/preview`):
-        - Generate presigned URL (expires in 1 hour or configurable).
-        - Return presigned URL to frontend for direct S3 access.
-      - File deletion: when template is deprecated/deleted, optionally delete S3 object (or keep for audit).
+    - **Template resource (local DB)**:
+      - Store template metadata: file name, size, department, MIME type, status (`draft`, `pending_approval`, `approved`, `deprecated`).
+      - Store **S3 object key** and bucket for the final .doc/.docx (after step 8).
+      - Store **HTML content** (or reference) for steps 5–6 and to support reconversion.
+      - Optional: store intermediate PDF or conversion job ID for audit/debug.
+    - **ConvertAPI integration**:
+      - Convert **.doc/.docx → PDF** (step 3).
+      - Convert **HTML → .doc/.docx** (step 7).
+      - Configuration: API key, endpoint (env vars).
+    - **Gemini integration**:
+      - Input: PDF (or extracted text/content). Output: **HTML** (step 4).
+      - Configuration: API key, model (env vars).
+    - **Endpoints**:
+      - `POST /templates/upload` – accept .doc/.docx only; store in DB; run steps 3–4; persist HTML; optionally upload initial file to S3 or wait until step 8.
+      - `GET /templates/:id` and/or `GET /templates/:id/html` – return template metadata and **HTML content** for frontend editor.
+      - `POST /templates/:id/save-content` (or similar) – accept **edited HTML**; run step 7 (HTML → .doc/.docx); step 8 (upload to S3); update template record.
+      - `GET /templates/:id/download` – generate presigned URL for the .doc/.docx file in S3.
+    - **AWS S3**:
+      - Used for **final** .doc/.docx only (after step 8). Structure: `{bucket}/templates/{templateId}/{version}/{filename}.docx`.
+      - Presigned URLs for download/preview of the document file.
 
 - **Workflow Approval for AI Flow (`WorkflowApprovalStep`)**
   - Flow:
     - Preparator/Admin reviews AI-generated workflow for uploaded template.
-    - Approve → proceed to AI conversion preview.
+    - Approve → proceed to AI conversion preview (editable HTML).
     - Reject → back to upload.
   - **Backend needs**:
     - Endpoint to **save AI workflow proposal** associated with a template.
@@ -104,14 +122,12 @@ The existing frontend is a single-page React app with role-aware navigation and 
 
 - **AI Conversion Preview (`AIConversionPreview`)**
   - Flow:
-    - User edits AI-extracted sections and fields.
-    - On save, a **Template** with form schema becomes available to Raise/Requests.
+    - Frontend loads **HTML** from backend (step 5) and shows it in an **editable HTML** editor (step 6).
+    - User edits content; on save, frontend sends **edited HTML** to backend.
+    - Backend reconverts HTML → .doc/.docx (step 7) and updates file in S3 (step 8).
   - **Backend needs**:
-    - Endpoint to **save final form schema** for a template.
-    - Support for **versioning** of templates over time.
-    - When creating new template version:
-      - Copy or reference original S3 object (or upload new file if changed).
-      - Store new S3 object key with version number in database.
+    - Endpoint to **save edited HTML** and trigger reconversion + S3 update (steps 7–8).
+    - Support for **versioning**: each save can create a new version (new S3 object, new version number in DB).
 
 #### 1.4. Request Creation & Approval Forms
 

@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "pharma-dms-phase1-all-apis",
 		"name": "Pharma-DMS Phase 1 - All Completed APIs",
-		"description": "Complete Postman collection for all Phase 1 APIs:\n\n**1.1 Authentication & Identity** – Login, Refresh, Logout, Forgot/Reset Password, Me, Roles, Departments, Navigation\n**1.2 Dashboards & Navigation** – Request Counts, Recent Requests, Recent Templates, KPIs\n**1.3 Templates & AI-Assisted Document Preparation** – Upload, List, Get, Download URL, Update, Approve, Versions, Delete\n\n**Setup:**\n1. Set baseUrl (default: http://localhost:4000)\n2. Run Health Check, then Login to get accessToken\n3. Tokens and templateId are auto-saved\n\n**Demo Users:** sarah.admin@company.com, john.requestor@company.com, robert.manager@company.com, patricia.approver@company.com (password: demo123)",
+		"description": "Complete Postman collection for all Phase 1 APIs:\n\n**1.1 Authentication & Identity** – Login, Refresh, Logout, Forgot/Reset Password, Me, Roles, Departments, Navigation\n**1.2 Dashboards & Navigation** – Request Counts, Recent Requests, Recent Templates, KPIs\n**1.3 Templates & AI-Assisted Document Preparation** – Upload, List, Get, Get HTML, Save Content, Download URL, Update, Approve, Versions, Delete\n\n**Setup:**\n1. Set baseUrl (default: http://localhost:4000)\n2. Run Health Check, then Login to get accessToken\n3. Tokens and templateId are auto-saved\n\n**Demo Users:** sarah.admin@company.com, john.requestor@company.com, robert.manager@company.com, patricia.approver@company.com (password: demo123)",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -965,12 +965,12 @@
 								"upload"
 							]
 						},
-						"description": "Upload a template file to AWS S3 and create a template record.\n\n**Request:**\n- Method: POST\n- Content-Type: multipart/form-data\n- Field name: `file` (required)\n- Optional fields: `name`, `description`, `departmentId`, `organizationId`\n\n**Response:**\n- Returns template metadata with `id`, `name`, `fileSize`, `status: 'draft'`\n- File is stored in S3 at: `Pharma+DMS/templates/{templateId}/v1/{filename}`"
+						"description": "Upload a template file and create a template record.\n\n**Request:**\n- Method: POST\n- Content-Type: multipart/form-data\n- Field name: `file` (required)\n- Optional: `name`, `description`, `departmentId`, `organizationId`\n\n**Behavior:**\n- **.doc/.docx:** Stored locally; backend converts to PDF (ConvertAPI) then to HTML (Gemini). Response includes `html` for editable view. File is uploaded to S3 only after **Save Template Content**.\n- **.xlsx / .pdf:** Uploaded directly to S3.\n\n**Response (201):** Template metadata with `id`, `name`, `fileSize`, `status: 'draft'`. For .doc/.docx (when ConvertAPI + Gemini are configured), response includes `html`."
 					},
 					"response": []
 				}
 			],
-			"description": "Upload template files to AWS S3"
+			"description": "Upload template files (.doc/.docx, .xlsx, .pdf). For .doc/.docx, file is stored locally and converted to HTML; S3 upload happens on Save Template Content."
 		},
 		{
 			"name": "2. List Templates",
@@ -1190,7 +1190,7 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/templates/:id?includeDownloadUrl=false",
+							"raw": "{{baseUrl}}/api/templates/:id?includeDownloadUrl=false&includeHtml=false",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -1204,6 +1204,11 @@
 									"key": "includeDownloadUrl",
 									"value": "false",
 									"description": "Include presigned download URL (default: false)"
+								},
+								{
+									"key": "includeHtml",
+									"value": "false",
+									"description": "Include generated HTML for editable view (.doc/.docx; default: false)"
 								}
 							],
 							"variable": [
@@ -1214,7 +1219,7 @@
 								}
 							]
 						},
-						"description": "Get template details by ID.\n\n**Query Parameters:**\n- `includeDownloadUrl`: Set to `true` to include presigned download URL in response"
+						"description": "Get template details by ID.\n\n**Query Parameters:**\n- `includeDownloadUrl`: Set to `true` to include presigned download URL (only if file is in S3; for .doc/.docx, only after save-content)\n- `includeHtml`: Set to `true` to include generated HTML for .doc/.docx templates"
 					},
 					"response": []
 				},
@@ -1296,9 +1301,165 @@
 						"description": "Get template details with presigned download URL included"
 					},
 					"response": []
+				},
+				{
+					"name": "Get Template HTML",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}",
+									"",
+									"var templateId = pm.collectionVariables.get(\"templateId\");",
+									"if (templateId) {",
+									"    pm.request.url.variables.get('id').value = templateId;",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response is HTML\", function () {",
+									"    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/templates/:id/html",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates",
+								":id",
+								"html"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{templateId}}",
+									"description": "Template ID"
+								}
+							]
+						},
+						"description": "Get template HTML only (for editable view). Returns raw HTML (Content-Type: text/html). For .doc/.docx, HTML is generated during upload (ConvertAPI → Gemini). Use after uploading a Word document; then frontend can edit and POST to Save Template Content."
+					},
+					"response": []
+				},
+				{
+					"name": "Save Template Content",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"if (!pm.collectionVariables.get(\"accessToken\")) {",
+									"    console.log(\"Warning: accessToken not set. Please run Login first.\");",
+									"}",
+									"",
+									"var templateId = pm.collectionVariables.get(\"templateId\");",
+									"if (templateId) {",
+									"    pm.request.url.variables.get('id').value = templateId;",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has success and metadata\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('status');",
+									"    pm.expect(jsonData.status).to.eql('success');",
+									"    pm.expect(jsonData).to.have.property('s3Key');",
+									"    pm.expect(jsonData).to.have.property('updatedAt');",
+									"    pm.expect(jsonData).to.have.property('id');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"html\": \"<div><h1>Edited document</h1><p>Save edited HTML to reconvert to .docx and upload to S3.</p></div>\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/templates/:id/save-content",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"templates",
+								":id",
+								"save-content"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{templateId}}",
+									"description": "Template ID"
+								}
+							]
+						},
+						"description": "Save edited HTML: backend merges content into the **original** DOCX (when available) so alignment and design are preserved, then uploads to S3. If no original .docx exists, converts HTML to DOCX only.\n\n**Flow:** (1) Locate original document from local storage (templateId). (2) Convert HTML to DOCX (ConvertAPI or html-to-docx). (3) When original .docx exists: merge new body into original (keeps styles, margins, layout). (4) Upload result to S3.\n\n**Request:** Body: { \"html\": \"<div>...</div>\" } (required, non-empty).\n\n**Response (200):** status: \"success\", s3Key, updatedAt (ISO), plus template metadata (id, name, originalFileName, templateStatus, html, etc.). Use to confirm success and refresh UI."
+					},
+					"response": []
 				}
 			],
-			"description": "Get template details"
+			"description": "Get template details, HTML (1.3 flow), and save edited content"
 		},
 		{
 			"name": "4. Download & Preview",
@@ -1387,7 +1548,7 @@
 								}
 							]
 						},
-						"description": "Generate a presigned URL for downloading/previewing the template file.\n\n**Query Parameters:**\n- `expiresIn`: Expiration time in seconds (default: 3600 = 1 hour)\n\n**Response:**\n- Returns `downloadUrl` (presigned S3 URL) and `expiresAt` timestamp\n- Use the URL directly in browser or download tool"
+						"description": "Generate a presigned URL for downloading/previewing the template file.\n\n**Query Parameters:**\n- `expiresIn`: Expiration time in seconds (default: 3600 = 1 hour)\n\n**Response (200):** downloadUrl (presigned S3 URL) and expiresAt.\n\n**Note:** For .doc/.docx templates, the file is only in S3 after **Save Template Content**. Until then, this endpoint returns **400 DOCUMENT_NOT_SAVED**. Use the URL in browser or download tool; URLs expire after the specified time."
 					},
 					"response": []
 				},

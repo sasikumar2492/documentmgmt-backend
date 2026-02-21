@@ -269,75 +269,69 @@ All modules in this phase are implemented backend‑first, then wired to the fro
 
 ### 5.1. Templates & AI Conversion
 
+Flow: **Upload .doc/.docx (frontend) → Store in local DB (backend) → Convert to PDF (ConvertAPI) → Gemini to HTML → Return HTML (API) → Editable HTML (frontend) → Reconvert to .doc/.docx (backend) → Update file in S3 (backend).**
+
 #### Backend
 
-- **AWS S3 Setup & Configuration**:
-  - Install AWS SDK: `npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner`.
-  - Configure S3 client with credentials:
-    - Use IAM role (recommended for production) or access keys from environment variables.
-    - Environment variables: `AWS_REGION`, `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
-  - Create S3 service utility (`src/services/s3Service.ts`):
-    - `uploadFile(bucket, key, fileBuffer, contentType, metadata)` – upload file to S3.
-    - `generatePresignedUrl(bucket, key, expiresIn)` – generate presigned URL for download/preview.
-    - `deleteFile(bucket, key)` – delete S3 object (for cleanup).
-    - `getFileMetadata(bucket, key)` – get file metadata (size, last modified).
-  - S3 bucket structure:
-    - `{bucket}/templates/{templateId}/{version}/{original-filename}`.
-    - Example: `pharma-dms-templates/550e8400-e29b-41d4-a716-446655440000/v1/Part_Approval_Form.xlsx`.
+- **Local DB storage (Step 2)**:
+  - On upload, store template **metadata and file reference** in local DB first (file as blob or temp path). Do not upload to S3 until after user has edited HTML and backend has reconverted to .doc/.docx (Step 8).
 
-- **Implement template APIs**:
+- **ConvertAPI integration (Steps 3 & 7)**:
+  - **Step 3:** Convert uploaded **.doc/.docx → PDF**. Use ConvertAPI (or equivalent) with API key from env (e.g. `CONVERT_API_SECRET`).
+  - **Step 7:** Convert **HTML → .doc/.docx** when user saves edited content. Call ConvertAPI (or equivalent) with edited HTML; receive binary .docx.
+  - Add `convertApiService` or similar in `src/services/` to encapsulate ConvertAPI calls.
+
+- **Gemini integration (Step 4)**:
+  - **Step 4:** Send PDF (or extracted text) to **Gemini**; get back **HTML**.
+  - Configure Gemini API key and model via env (e.g. `GEMINI_API_KEY`, `GEMINI_MODEL`).
+  - Add `geminiService` or similar in `src/services/` for PDF/content → HTML conversion.
+
+- **Endpoints**:
   - `POST /templates/upload`:
-    - Accept `multipart/form-data` with file field.
-    - Validate file type (`.docx`, `.xlsx`, `.pdf`), size (max 50MB).
-    - Upload file to S3 using `s3Service.uploadFile()`.
-    - Store template record in database with:
-      - `s3Bucket`, `s3Key`, `originalFileName`, `fileSize`, `mimeType`, `departmentId`, `status: 'draft'`.
-    - Return template DTO with `id`, `fileName`, `fileSize`, `status` (not S3 URL; generate presigned URLs on-demand).
-  - `GET /templates` – paginate, filter by department/status.
-    - Return list with metadata (no presigned URLs; frontend requests download URL separately if needed).
-  - `GET /templates/:id`:
-    - Return full template details including metadata.
-    - Optionally include presigned URL for preview (if `?includeDownloadUrl=true`).
+    - Accept **.doc or .docx only** (multipart/form-data), size limit (e.g. 50MB).
+    - Store file in local DB (or temp storage); create template record with status `draft`.
+    - Run pipeline: ConvertAPI (doc → PDF) → Gemini (PDF → HTML); store **HTML** in DB (or linked storage).
+    - Optionally do **not** upload to S3 yet; S3 upload happens after user saves edited HTML (Step 8).
+    - Return template DTO with `id`, `fileName`, `fileSize`, `status`; optionally include `html` in response or via separate endpoint.
+  - `GET /templates/:id` and/or `GET /templates/:id/html`:
+    - Return template metadata and **HTML content** (Step 5) for frontend editable view.
+  - `POST /templates/:id/save-content` (or `PUT /templates/:id/content`):
+    - Accept **edited HTML** in request body.
+    - Reconvert HTML → .doc/.docx via ConvertAPI (Step 7).
+    - Upload resulting .doc/.docx to **AWS S3** (Step 8); update template record (`s3Bucket`, `s3Key`, `version`, etc.).
+    - Return updated template DTO.
+  - `GET /templates` – paginate, filter by department/status (metadata only).
   - `GET /templates/:id/download` or `GET /templates/:id/preview`:
-    - Generate presigned URL (expires in 1 hour).
-    - Return `{ downloadUrl: "<presigned-url>", expiresAt: "<timestamp>" }`.
-  - `PATCH /templates/:id` – update metadata (not file; file updates require new version).
-  - `POST /templates/:id/approve` – transition template to approved, create version if needed.
-  - `GET /templates/:id/versions`:
-    - Return all versions with S3 keys (generate presigned URLs per version if requested).
-  - `DELETE /templates/:id` (soft delete):
-    - Mark template as deleted in database.
-    - Optionally delete S3 object (or keep for audit trail).
+    - Generate presigned URL for the .doc/.docx file in S3 (after Step 8); return `{ downloadUrl, expiresAt }`.
+  - `PATCH /templates/:id` – update metadata only.
+  - `POST /templates/:id/approve` – transition to approved; optional versioning.
+  - `GET /templates/:id/versions` – list versions (S3 keys; presigned URLs on demand).
+  - `DELETE /templates/:id` – soft delete; optionally delete S3 object.
 
-- **Database schema updates**:
-  - `DocumentTemplate` table fields:
-    - `s3_bucket` (text) – S3 bucket name.
-    - `s3_key` (text) – S3 object key (path).
-    - `original_file_name` (text) – original uploaded filename.
-    - `file_size` (bigint) – file size in bytes.
-    - `mime_type` (text) – MIME type (e.g., `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).
-    - `version` (int, default 1) – template version number.
-    - `status` (enum: `draft`, `pending_approval`, `approved`, `deprecated`).
-    - `parsed_sections` (jsonb) – AI-extracted sections/fields.
-    - `form_schema` (jsonb) – final form schema after AI conversion preview.
+- **AWS S3** (used for final .doc/.docx after Step 8):
+  - Install: `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner`.
+  - Env: `AWS_REGION`, `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
+  - S3 service: `uploadFile`, `generatePresignedUrl`, `deleteFile`, `getFileMetadata`.
+  - Bucket structure: `{bucket}/templates/{templateId}/{version}/{filename}.docx`.
+
+- **Database schema** (`DocumentTemplate`):
+  - `s3_bucket`, `s3_key` – for final .doc/.docx (populated after Step 8).
+  - `original_file_name`, `file_size`, `mime_type`, `version`, `status`, `department_id`, etc.
+  - `html_content` (text) or `html_storage_key` – stored HTML for Steps 5–6 and reconversion.
+  - Optional: `parsed_sections` (jsonb), `form_schema` (jsonb) for workflow/AI features.
 
 - `TemplateService` responsibilities:
-  - Handle file upload to S3 and database persistence.
-  - Generate presigned URLs for secure file access.
-  - Persist AI‑parsed sections and converted form schema.
-  - Link templates to workflows or departments based on rules.
-  - Trigger notifications on important events (e.g., template approved).
-  - Handle template versioning (new version = new S3 object + new DB record with incremented version).
+  - Store upload in local DB; run ConvertAPI (doc→PDF) and Gemini (PDF→HTML); persist HTML.
+  - Return HTML via GET template/html endpoints.
+  - On save-content: reconvert HTML→doc (ConvertAPI), upload to S3, update DB.
+  - Generate presigned URLs for .doc/.docx in S3; handle versioning and soft delete.
 
 #### Frontend
 
-- Create `templateApi` slice:
-  - Consume `/templates` for:
-    - `UploadTemplates`, `DocumentManagement`, `RaiseRequest`, workflows.
-  - Replace mock template arrays with data from the API.
-  - Handle upload:
-    - Wire upload controls to `POST /templates/upload`.
-    - Show progress, success, and validation errors using toasts and existing UI elements.
+- **Step 1:** Upload .doc/.docx via `POST /templates/upload` (multipart); show progress and validation errors.
+- **Step 5–6:** Fetch HTML via `GET /templates/:id` or `GET /templates/:id/html`; render in an **editable HTML** editor (e.g. rich-text or HTML textarea/code editor).
+- On save: send **edited HTML** to `POST /templates/:id/save-content` (or equivalent); then backend performs Steps 7–8 (reconvert, S3 update).
+- Create `templateApi` slice for upload, get template, get HTML, save-content, list, download (presigned URL).
 
 ---
 

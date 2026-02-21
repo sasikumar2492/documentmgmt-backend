@@ -26,12 +26,18 @@ router.post(
 // Get templates list (with pagination and filters)
 router.get("/", templateController.getTemplates);
 
-// Get single template by ID
+// Get template HTML only (for editable view) — must be before /:id
+router.get("/:id/html", templateController.getTemplateHtml);
+
+// Get single template by ID (?includeHtml=true, ?includeDownloadUrl=true)
 router.get("/:id", templateController.getTemplate);
 
-// Get template download/preview URL (presigned URL)
+// Get template download/preview URL (presigned URL; requires save-content first for .doc/.docx)
 router.get("/:id/download", templateController.getTemplateDownload);
 router.get("/:id/preview", templateController.getTemplateDownload); // Alias for download
+
+// Save edited HTML: reconvert to .docx and upload to S3 (body: { html: string })
+router.post("/:id/save-content", templateController.saveTemplateContent);
 
 // Update template metadata
 router.patch("/:id", templateController.updateTemplate);

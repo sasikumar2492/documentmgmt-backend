@@ -2,6 +2,11 @@ import type { Request, Response, NextFunction } from "express";
 import * as templateService from "../services/templateService";
 import { AppError } from "../errors/AppError";
 
+function getTemplateId(req: Request): string {
+  const id = req.params.id;
+  return Array.isArray(id) ? id[0] ?? "" : id ?? "";
+}
+
 export async function uploadTemplate(
   req: Request,
   res: Response,
@@ -73,12 +78,60 @@ export async function getTemplate(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getTemplateId(req);
     const includeDownloadUrl = req.query.includeDownloadUrl === "true";
+    const includeHtml = req.query.includeHtml === "true";
 
-    const template = await templateService.getTemplateById(
+    const template = await templateService.getTemplateById(id, {
+      includeDownloadUrl,
+      includeHtml,
+    });
+
+    res.status(200).json(template);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getTemplateHtml(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const id = getTemplateId(req);
+    const html = await templateService.getTemplateHtml(id);
+    res.status(200).set("Content-Type", "text/html; charset=utf-8").send(html);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function saveTemplateContent(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const id = getTemplateId(req);
+    const { html } = req.body;
+    const userId = req.user?.sub;
+
+    if (!userId) {
+      return next(
+        new AppError(401, "UNAUTHENTICATED", "User authentication required")
+      );
+    }
+    if (typeof html !== "string" || !html.trim()) {
+      return next(
+        new AppError(400, "HTML_REQUIRED", "Request body must include non-empty 'html' string")
+      );
+    }
+
+    const template = await templateService.saveTemplateContent(
       id,
-      includeDownloadUrl
+      html.trim(),
+      userId
     );
 
     res.status(200).json(template);
@@ -93,7 +146,7 @@ export async function getTemplateDownload(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getTemplateId(req);
     const expiresIn = req.query.expiresIn
       ? Number(req.query.expiresIn)
       : 3600;
@@ -112,7 +165,7 @@ export async function updateTemplate(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getTemplateId(req);
     const { name, description, parsedSections, formSchema, aiWorkflowProposal, status } =
       req.body;
     const userId = req.user?.sub;
@@ -142,7 +195,7 @@ export async function approveTemplate(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getTemplateId(req);
     const userId = req.user?.sub;
 
     if (!userId) {
@@ -165,7 +218,7 @@ export async function getTemplateVersions(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getTemplateId(req);
     const includeDownloadUrls = req.query.includeDownloadUrls === "true";
 
     const versions = await templateService.getTemplateVersions(
@@ -185,7 +238,7 @@ export async function deleteTemplate(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getTemplateId(req);
     const deleteS3File = req.query.deleteS3File === "true";
 
     const result = await templateService.deleteTemplate(id, deleteS3File);

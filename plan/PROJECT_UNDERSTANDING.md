@@ -107,25 +107,21 @@ The solution supports multiple user roles (Admin, Requestor, Preparator, Reviewe
 #### 3.3. Document Templates & AI-Assisted Generation
 
 - **Upload Templates / Document Management (`UploadTemplates`, `DocumentManagement`)**
-  - Upload Word/Excel/PDF files as templates.
-  - Use AI/parsers (`excelParser`, `wordParser`, `pdfParser`, `workflowGenerator`) to:
-    - Extract form sections and fields.
-    - Propose an AI workflow (departments, steps, sequence).
+  - **Flow (see Phase 1 plan 1.3):** Upload **.doc/.docx** only (frontend) → backend stores in **local DB** → ConvertAPI converts to **PDF** → **Gemini** converts to **HTML** → API returns **HTML** → frontend provides **editable HTML** → on save, backend reconverts HTML to .doc/.docx and updates file in **S3**.
+  - Use AI (Gemini) and ConvertAPI for conversion pipeline; optional parsers/workflowGenerator for form sections and AI workflow proposal (departments, steps, sequence).
   - Display upload metadata: file name, size, department, upload date.
 
 - **Workflow Approval for AI-Generated Flow (`WorkflowApprovalStep`)**
   - Preparator/Admin reviews AI-generated workflow:
     - Steps, departments, order.
   - Outcomes:
-    - Approve → proceed to AI Conversion Preview.
+    - Approve → proceed to AI Conversion Preview (editable HTML).
     - Reject → return to Upload Templates to adjust/try again.
 
 - **AI Conversion Preview (`AIConversionPreview`)**
-  - Visual editor for AI-generated form sections and fields.
-  - Users can:
-    - Refine labels, field types, required flags.
-    - Confirm department assignments.
-  - Saving creates a reusable **Template** entry for future requests.
+  - **Editable HTML** view/editor: user edits the HTML returned from the backend; on save, frontend sends edited HTML to backend, which reconverts to .doc/.docx and updates S3.
+  - Optionally: visual editor for AI-generated form sections and fields (refine labels, field types, required flags, department assignments).
+  - Saving creates/updates a reusable **Template** entry and updates the .doc/.docx file in S3 for future requests.
 
 #### 3.4. Request Creation & Approval Forms
 
